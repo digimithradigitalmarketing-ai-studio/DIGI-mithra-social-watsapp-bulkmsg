@@ -48,6 +48,39 @@
   --sidebar: #050b1c;
   --sidebar-foreground: #aab6d6;
   --sidebar-active: #142a5e;
+  --wa-primary: #25d366;
+  --wa-accent: #00a884;
+  --wa-bg: #0b141a;
+  --wa-wallpaper: #0b141a;
+  --wa-sidebar: #111b21;
+  --wa-header: #202c33;
+  --wa-bubble-out: #005c4b;
+  --wa-bubble-in: #202c33;
+  --wa-text: #e9edef;
+  --wa-text-muted: #8696a0;
+  --wa-border: #26353d;
+  --wa-read: #53bdeb;
+  --wa-hover: #202c33;
+  --wa-selected: #2a3942;
+}
+
+/* Messaging workspace (inbox) tokens: original DigiMithra palette in the familiar messaging layout.
+   Used only by the inbox; the rest of the app keeps the DigiMithra tokens above. */
+:root {
+  --wa-primary: #25d366;
+  --wa-accent: #00a884;
+  --wa-bg: #f0f2f5;
+  --wa-wallpaper: #efeae2;
+  --wa-sidebar: #ffffff;
+  --wa-header: #f0f2f5;
+  --wa-bubble-out: #d9fdd3;
+  --wa-bubble-in: #ffffff;
+  --wa-text: #111b21;
+  --wa-text-muted: #667781;
+  --wa-border: #d1d7db;
+  --wa-read: #53bdeb;
+  --wa-hover: #f5f6f6;
+  --wa-selected: #f0f2f5;
 }
 
 @theme inline {
@@ -74,6 +107,20 @@
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-active: var(--sidebar-active);
+  --color-wa-primary: var(--wa-primary);
+  --color-wa-accent: var(--wa-accent);
+  --color-wa-bg: var(--wa-bg);
+  --color-wa-wallpaper: var(--wa-wallpaper);
+  --color-wa-sidebar: var(--wa-sidebar);
+  --color-wa-header: var(--wa-header);
+  --color-wa-bubble-out: var(--wa-bubble-out);
+  --color-wa-bubble-in: var(--wa-bubble-in);
+  --color-wa-text: var(--wa-text);
+  --color-wa-text-muted: var(--wa-text-muted);
+  --color-wa-border: var(--wa-border);
+  --color-wa-read: var(--wa-read);
+  --color-wa-hover: var(--wa-hover);
+  --color-wa-selected: var(--wa-selected);
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);

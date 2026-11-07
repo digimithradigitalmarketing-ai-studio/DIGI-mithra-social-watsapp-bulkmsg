@@ -1,0 +1,83 @@
+# Render Blueprint — DigiMithra Social Pilot (independent of app.digimithra.co.in)
+services:
+  - type: web
+    name: bulkmsg-api
+    runtime: node
+    region: singapore
+    plan: starter
+    buildCommand: npm ci --include=dev && npm run build -w @socialpilot/api
+    startCommand: node apps/api/dist/server.js
+    healthCheckPath: /health
+    envVars:
+      - { key: APP_ENV, value: production }
+      - { key: NODE_VERSION, value: "22" }
+      - { key: TRUST_PROXY, value: "1" }
+      - { key: WEB_ORIGINS, value: https://bulkmsg.digimithra.co.in }
+      - { key: PUBLIC_WEB_URL, value: https://bulkmsg.digimithra.co.in }
+      - { key: DATABASE_DRIVER, value: pg }
+      - { key: DB_AUTO_MIGRATE, value: "false" }
+      - { key: AUTH_PROVIDER, value: supabase }
+      - { key: ADMIN_REQUIRE_MFA, value: "true" }
+      - { key: DATABASE_URL, sync: false }
+      - { key: SUPABASE_URL, sync: false }
+      - { key: SUPABASE_PUBLISHABLE_KEY, sync: false }
+      - { key: INTEGRATION_ENCRYPTION_KEY, sync: false }
+      - { key: PUBLIC_API_URL, value: https://api.bulkmsg.digimithra.co.in }
+      - { key: WORKER_IN_PROCESS, value: "false" }
+      - { key: ALLOW_MOCK_WHATSAPP, value: "false" }
+      - { key: META_APP_SECRET, sync: false }
+      - { key: META_WEBHOOK_VERIFY_TOKEN, sync: false }
+      - { key: META_GRAPH_API_VERSION, sync: false }
+      - { key: AI_PROVIDER, value: gemini }
+      - { key: GEMINI_API_KEY, sync: false }
+      - { key: BILLING_PROVIDER, value: razorpay }
+      - { key: RAZORPAY_KEY_ID, sync: false }
+      - { key: RAZORPAY_KEY_SECRET, sync: false }
+      - { key: RAZORPAY_WEBHOOK_SECRET, sync: false }
+      - { key: GEMINI_MODEL, sync: false }
+    domains: [api.bulkmsg.digimithra.co.in]
+
+  # Sends campaigns, processes webhooks, retries failures. Same env as the API.
+  - type: worker
+    name: bulkmsg-worker
+    runtime: node
+    region: singapore
+    plan: starter
+    buildCommand: npm ci --include=dev && npm run build -w @socialpilot/api
+    startCommand: node apps/api/dist/worker.js
+    envVars:
+      - { key: APP_ENV, value: production }
+      - { key: NODE_VERSION, value: "22" }
+      - { key: DATABASE_DRIVER, value: pg }
+      - { key: DB_AUTO_MIGRATE, value: "false" }
+      - { key: AUTH_PROVIDER, value: supabase }
+      - { key: WORKER_IN_PROCESS, value: "false" }
+      - { key: ALLOW_MOCK_WHATSAPP, value: "false" }
+      - { key: WEB_ORIGINS, value: https://bulkmsg.digimithra.co.in }
+      - { key: DATABASE_URL, sync: false }
+      - { key: SUPABASE_URL, sync: false }
+      - { key: SUPABASE_PUBLISHABLE_KEY, sync: false }
+      - { key: INTEGRATION_ENCRYPTION_KEY, sync: false }
+      - { key: META_GRAPH_API_VERSION, sync: false }
+      - { key: AI_PROVIDER, value: gemini }
+      - { key: GEMINI_API_KEY, sync: false }
+      - { key: BILLING_PROVIDER, value: razorpay }
+      - { key: RAZORPAY_KEY_ID, sync: false }
+      - { key: RAZORPAY_KEY_SECRET, sync: false }
+      - { key: RAZORPAY_WEBHOOK_SECRET, sync: false }
+      - { key: GEMINI_MODEL, sync: false }
+
+  - type: web
+    name: bulkmsg-web
+    runtime: static
+    buildCommand: npm ci --include=dev && npm run build -w @socialpilot/web
+    staticPublishPath: apps/web/dist
+    envVars:
+      - { key: VITE_API_URL, value: https://api.bulkmsg.digimithra.co.in }
+    routes:
+      - { type: rewrite, source: /*, destination: /index.html }
+    headers:
+      - { path: /*, name: X-Frame-Options, value: DENY }
+      - { path: /*, name: Referrer-Policy, value: strict-origin-when-cross-origin }
+      - { path: /*, name: Strict-Transport-Security, value: max-age=31536000; includeSubDomains }
+    domains: [bulkmsg.digimithra.co.in]
