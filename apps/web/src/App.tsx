@@ -11,6 +11,7 @@ import ComingSoon from '@/pages/app/ComingSoon';
 import BusinessProfile from '@/pages/app/settings/BusinessProfile';
 import Team from '@/pages/app/settings/Team';
 import { AccountPage, ActivityPage, RolesPage, SubscriptionPage } from '@/pages/app/settings/Other';
+import { IntegrationsPage } from '@/pages/app/settings/Integrations';
 import { AdminAudit, AdminBusinesses, AdminOverview, AdminPlans, AdminSettings, AdminShell } from '@/pages/admin/Admin';
 import { Privacy, Terms } from '@/pages/legal/Legal';
 import Connection from '@/pages/app/whatsapp/Connection';
@@ -104,6 +105,7 @@ export default function App() {
           <Route path="settings/team" element={<Team />} />
           <Route path="settings/roles" element={<RolesPage />} />
           <Route path="settings/subscription" element={<SubscriptionPage />} />
+          <Route path="settings/integrations" element={<IntegrationsPage />} />
           <Route path="settings/activity" element={<ActivityPage />} />
           <Route path="settings/account" element={<AccountPage />} />
           <Route path="*" element={<ComingSoon />} />

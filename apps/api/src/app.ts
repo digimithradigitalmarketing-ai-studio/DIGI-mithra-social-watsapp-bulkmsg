@@ -24,6 +24,7 @@ import { crmRouter } from './routes/crm';
 import { automationRouter } from './routes/automation';
 import { aiRouter } from './routes/ai';
 import { billingRouter } from './routes/billing';
+import { integrationsRouter } from './routes/integrations';
 
 export function createApp(deps: Deps) {
   const { config, logger } = deps;
@@ -90,6 +91,7 @@ export function createApp(deps: Deps) {
   app.use('/v1', automationRouter(deps));
   app.use('/v1', aiRouter(deps));
   app.use('/v1', billingRouter(deps));
+  app.use('/v1', integrationsRouter(deps));
   app.use('/v1/webhooks', webhooksRouter(deps));
 
   app.use((_req, res) => {

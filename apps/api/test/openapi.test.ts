@@ -16,7 +16,8 @@ describe('OpenAPI spec', () => {
       '/v1/businesses/{businessId}/conversations/{conversationId}/messages', '/v1/businesses/{businessId}/leads/{leadId}', '/v1/businesses/{businessId}/tasks', '/v1/businesses/{businessId}/reports',
       '/v1/businesses/{businessId}/automations/{workflowId}/publish', '/v1/businesses/{businessId}/automation-executions/{executionId}/retry',
       '/v1/businesses/{businessId}/ai/settings', '/v1/businesses/{businessId}/conversations/{conversationId}/ai-suggest',
-      '/v1/businesses/{businessId}/billing', '/v1/businesses/{businessId}/billing/checkout', '/v1/webhooks/razorpay'])
+      '/v1/businesses/{businessId}/billing', '/v1/businesses/{businessId}/billing/checkout', '/v1/webhooks/razorpay',
+      '/v1/businesses/{businessId}/integrations', '/v1/integrations/lead-intake'])
       expect(paths).toContain(p);
   });
 });

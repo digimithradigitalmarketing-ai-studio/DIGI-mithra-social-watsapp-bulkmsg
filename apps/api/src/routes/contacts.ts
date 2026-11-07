@@ -29,7 +29,7 @@ export function mapContact(c: any): ContactDto {
   };
 }
 
-async function contactLimit(db: Queryable, businessId: string) {
+export async function contactLimit(db: Queryable, businessId: string) {
   const r = await db.query<{ lim: number | null; used: number }>(
     `select (select limit_value from public.subscription_entitlements where business_id = $1 and key = 'contacts') as lim,
             (select count(*)::int from public.contacts where business_id = $1 and archived_at is null) as used`,

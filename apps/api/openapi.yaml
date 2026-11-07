@@ -456,6 +456,20 @@ paths:
     parameters: [{ $ref: '#/components/parameters/businessId' }]
     post: { summary: 'Mock mode only: simulate the charge webhook for the pending checkout (owner only). Returns 404 when BILLING_PROVIDER is razorpay.', responses: { '202': { description: Queued }, '404': { $ref: '#/components/responses/Error' } } }
 
+  /v1/businesses/{businessId}/integrations:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get: { summary: Lead intake keys and intake URL (owner, api_keys.manage), responses: { '200': { description: Integrations } } }
+  /v1/businesses/{businessId}/integrations/keys:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    post: { summary: 'Create a lead intake key (owner). The secret is returned once.', responses: { '201': { description: Created with secret } } }
+  /v1/businesses/{businessId}/integrations/keys/{keyId}/revoke:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: keyId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: Revoke a key (owner), responses: { '200': { description: Revoked } } }
+  /v1/integrations/lead-intake:
+    post:
+      summary: Signed enquiry intake from a form. Headers X-DM-Key-Id, X-DM-Timestamp (unix seconds, ±300s), X-DM-Signature (hex HMAC-SHA256 of "timestamp.rawBody"). Idempotent on externalId.
+      security: []
+      responses: { '202': { description: Accepted }, '200': { description: Duplicate externalId }, '401': { description: Bad key, signature or timestamp }, '402': { description: Contact limit reached }, '422': { description: Invalid body } }
   /v1/businesses/{businessId}/ai/knowledge:
     parameters: [{ $ref: '#/components/parameters/businessId' }]
     get: { summary: Knowledge base entries, responses: { '200': { description: Entries } } }
