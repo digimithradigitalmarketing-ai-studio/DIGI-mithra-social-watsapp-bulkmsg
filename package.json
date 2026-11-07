@@ -1,0 +1,18 @@
+{
+  "name": "digimithra-social-pilot",
+  "private": true,
+  "version": "0.1.0",
+  "description": "DigiMithra Social Pilot — multi-tenant business messaging, CRM and automation SaaS",
+  "workspaces": ["packages/*", "apps/*"],
+  "engines": { "node": ">=20.19" },
+  "scripts": {
+    "dev": "npm run dev -w @socialpilot/api & npm run dev -w @socialpilot/web",
+    "dev:api": "npm run dev -w @socialpilot/api",
+    "dev:web": "npm run dev -w @socialpilot/web",
+    "build": "npm run build -w @socialpilot/api && npm run build -w @socialpilot/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "migrate": "npm run migrate -w @socialpilot/api",
+    "admin:provision": "npm run admin:provision -w @socialpilot/api --"
+  }
+}

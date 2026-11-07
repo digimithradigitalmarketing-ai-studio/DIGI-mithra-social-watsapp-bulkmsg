@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(timeout 250 npx vitest run test/inbox-crm.test.ts)",
+      "Bash(timeout 290 npx vitest run)",
+      "Bash(timeout 200 npx vitest run test/whatsapp.test.ts)",
+      "Bash(timeout 200 npx vitest run test/inbox-crm.test.ts)",
+      "Bash(python3 -)"
+    ]
+  }
+}

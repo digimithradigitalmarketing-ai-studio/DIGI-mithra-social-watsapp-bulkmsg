@@ -1,0 +1,7 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "api", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev", "-w", "@socialpilot/api"], "port": 8080 },
+    { "name": "web", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev", "-w", "@socialpilot/web"], "port": 5173 }
+  ]
+}

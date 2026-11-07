@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* DigiMithra Social Pilot design tokens
+   navy #0b1b3f · electric blue #2f6bff · teal #14b8a6 · success #16a34a */
+:root {
+  --background: #f6f8fc;
+  --foreground: #0b1b3f;
+  --card: #ffffff;
+  --card-foreground: #0b1b3f;
+  --muted: #eef2f9;
+  --muted-foreground: #5b6785;
+  --border: #e2e8f3;
+  --input: #d6deec;
+  --ring: #2f6bff;
+  --primary: #2f6bff;
+  --primary-foreground: #ffffff;
+  --navy: #0b1b3f;
+  --navy-foreground: #e6ecfa;
+  --accent: #e8f0ff;
+  --accent-foreground: #1d4fd8;
+  --teal: #14b8a6;
+  --success: #16a34a;
+  --warning: #d97706;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --sidebar: #0b1b3f;
+  --sidebar-foreground: #c7d2ec;
+  --sidebar-active: #18306a;
+  --radius: 0.75rem;
+}
+
+.dark {
+  --background: #070f24;
+  --foreground: #e6ecfa;
+  --card: #0d1834;
+  --card-foreground: #e6ecfa;
+  --muted: #13224a;
+  --muted-foreground: #93a1c3;
+  --border: #1c2c57;
+  --input: #263a6d;
+  --ring: #5b8cff;
+  --primary: #4a7dff;
+  --primary-foreground: #ffffff;
+  --accent: #15295a;
+  --accent-foreground: #b9ccff;
+  --sidebar: #050b1c;
+  --sidebar-foreground: #aab6d6;
+  --sidebar-active: #142a5e;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-navy: var(--navy);
+  --color-navy-foreground: var(--navy-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-teal: var(--teal);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-active: var(--sidebar-active);
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+  --font-sans: "Inter", "Noto Sans Kannada", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+@layer base {
+  * { border-color: var(--border); }
+  html, body, #root { height: 100%; }
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+}
+
+.brand-gradient { background-image: linear-gradient(135deg, #2f6bff 0%, #14b8a6 100%); }
+.brand-text { background-image: linear-gradient(135deg, #2f6bff, #14b8a6); -webkit-background-clip: text; background-clip: text; color: transparent; }

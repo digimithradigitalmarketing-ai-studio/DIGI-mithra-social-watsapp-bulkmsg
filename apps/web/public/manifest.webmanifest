@@ -1,0 +1,9 @@
+{
+  "name": "DigiMithra Social Pilot",
+  "short_name": "Social Pilot",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0b1b3f",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
