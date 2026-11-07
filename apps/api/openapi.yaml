@@ -1,0 +1,481 @@
+openapi: 3.1.0
+info:
+  title: DigiMithra Social Pilot API
+  version: 0.1.0 (Phase 1)
+  description: |
+    Multi-tenant API for DigiMithra Social Pilot.
+    * Success: `{ "data": ..., "meta"?: { page, pageSize, total } }`
+    * Error:   `{ "error": { "code", "message", "details"?, "requestId" } }`
+    * Auth: `Authorization: Bearer <accessToken>`. The refresh token is an httpOnly cookie (`sp_rt`, path `/v1/auth`);
+      cookie endpoints require header `X-Requested-With: socialpilot`.
+    * Non-members receive **404** for another workspace's routes (existence is not revealed). Suspended workspaces return **423**.
+servers:
+  - url: https://api.socialpilot.digimithra.co.in
+  - url: http://localhost:8080
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    businessId: { name: businessId, in: path, required: true, schema: { type: string, format: uuid } }
+    page: { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+    pageSize: { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+    q: { name: q, in: query, schema: { type: string, maxLength: 100 } }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, examples: [validation_failed, unauthorized, forbidden, not_found, business_suspended, mfa_required, seat_limit_reached] }
+            message: { type: string }
+            details: { description: 'For validation_failed: { fields: { [field]: message } }' }
+            requestId: { type: string }
+    Session:
+      type: object
+      properties:
+        accessToken: { type: string }
+        expiresAt: { type: integer, description: epoch seconds }
+        aal: { type: string, enum: [aal1, aal2] }
+        user: { type: object, properties: { id: { type: string }, email: { type: string }, emailVerified: { type: boolean } } }
+    Role: { type: string, enum: [owner, manager, agent] }
+    Plan:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        monthlyPricePaise: { type: integer }
+        annualPricePaise: { type: integer }
+        trialDays: { type: integer }
+        limits: { type: object, additionalProperties: { type: integer } }
+        features: { type: array, items: { type: string } }
+    Business:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        industry: { type: string }
+        timezone: { type: string, default: Asia/Kolkata }
+        currency: { type: string, default: INR }
+        defaultLanguage: { type: string, enum: [en, kn] }
+        status: { type: string, enum: [active, suspended, closed] }
+        myRole: { $ref: '#/components/schemas/Role' }
+        subscription:
+          type: [object, 'null']
+          properties:
+            status: { type: string, enum: [trialing, active, past_due, paused, cancelled, expired] }
+            trialEndsAt: { type: [string, 'null'], format: date-time }
+            plan: { $ref: '#/components/schemas/Plan' }
+    Member:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        email: { type: string }
+        fullName: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
+        status: { type: string, enum: [active, disabled] }
+  responses:
+    Error: { description: Error, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+security: [{ bearer: [] }]
+paths:
+  /health:
+    get: { summary: Liveness and database check, security: [], responses: { '200': { description: OK }, '503': { description: Database unavailable } } }
+
+  /v1/auth/signup:
+    post:
+      summary: Register an account (never grants Super Admin)
+      security: []
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [fullName, email, password, acceptTerms], properties: { fullName: { type: string }, email: { type: string, format: email }, password: { type: string, minLength: 10 }, acceptTerms: { const: true } } } } } }
+      responses:
+        '201': { description: 'Created. session is null when email verification is required', content: { application/json: { schema: { type: object, properties: { data: { type: object, properties: { session: { oneOf: [{ $ref: '#/components/schemas/Session' }, { type: 'null' }] }, emailVerificationRequired: { type: boolean } } } } } } } }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+  /v1/auth/login:
+    post:
+      summary: Sign in with email and password; sets refresh cookie
+      security: []
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [email, password], properties: { email: { type: string }, password: { type: string } } } } } }
+      responses: { '200': { description: Session, content: { application/json: { schema: { type: object, properties: { data: { $ref: '#/components/schemas/Session' } } } } } }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' } }
+  /v1/auth/refresh:
+    post: { summary: 'Rotate refresh cookie and issue a new access token (requires X-Requested-With)', security: [], responses: { '200': { description: Session }, '401': { $ref: '#/components/responses/Error' }, '403': { $ref: '#/components/responses/Error' } } }
+  /v1/auth/logout:
+    post: { summary: Revoke refresh token and clear cookie, security: [], responses: { '204': { description: Signed out } } }
+  /v1/auth/verify-email:
+    post: { summary: Confirm email with token from link (local provider), security: [], requestBody: { content: { application/json: { schema: { type: object, properties: { token: { type: string } } } } } }, responses: { '200': { description: Verified }, '400': { $ref: '#/components/responses/Error' } } }
+  /v1/auth/forgot-password:
+    post: { summary: Send reset link (same response whether or not the account exists), security: [], responses: { '202': { description: Accepted } } }
+  /v1/auth/reset-password:
+    post: { summary: Set a new password with a reset token; revokes existing sessions, security: [], responses: { '200': { description: Reset }, '400': { $ref: '#/components/responses/Error' } } }
+  /v1/auth/mfa/factors:
+    get: { summary: List TOTP factors, responses: { '200': { description: Factors } } }
+  /v1/auth/mfa/enroll:
+    post: { summary: Start TOTP enrolment (returns secret and otpauth URL), responses: { '201': { description: Enrolment }, '409': { $ref: '#/components/responses/Error' } } }
+  /v1/auth/mfa/verify:
+    post: { summary: Verify a TOTP code; returns an aal2 session, requestBody: { content: { application/json: { schema: { type: object, required: [factorId, code], properties: { factorId: { type: string }, code: { type: string, pattern: '^\d{6}$' } } } } } }, responses: { '200': { description: aal2 session }, '400': { $ref: '#/components/responses/Error' } } }
+
+  /v1/me:
+    get: { summary: Current user, admin flag and workspace memberships, responses: { '200': { description: Me } } }
+    patch: { summary: Update own profile (name, phone, language), responses: { '200': { description: Updated } } }
+  /v1/plans:
+    get: { summary: Active subscription plans (public), security: [], responses: { '200': { description: Plans, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/Plan' } } } } } } } } }
+
+  /v1/businesses:
+    get: { summary: My workspaces, responses: { '200': { description: Memberships } } }
+    post:
+      summary: Create a workspace (caller becomes owner; trial subscription, entitlements, default pipeline)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string }, industry: { type: string }, phone: { type: string }, city: { type: string }, timezone: { type: string }, defaultLanguage: { type: string, enum: [en, kn] } } } } } }
+      responses: { '201': { description: Created, content: { application/json: { schema: { type: object, properties: { data: { $ref: '#/components/schemas/Business' } } } } } }, '403': { $ref: '#/components/responses/Error' } }
+  /v1/businesses/{businessId}:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get: { summary: Workspace details, responses: { '200': { description: Business }, '404': { $ref: '#/components/responses/Error' }, '423': { $ref: '#/components/responses/Error' } } }
+    patch: { summary: Update business profile (owner), responses: { '200': { description: Business }, '403': { $ref: '#/components/responses/Error' } } }
+  /v1/businesses/{businessId}/dashboard:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get: { summary: Dashboard metrics (RLS-scoped to caller), responses: { '200': { description: Dashboard } } }
+  /v1/businesses/{businessId}/audit-logs:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }]
+    get: { summary: Workspace activity log (owner/manager), responses: { '200': { description: Paged audit entries } } }
+  /v1/businesses/{businessId}/members:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get: { summary: Team members, responses: { '200': { description: Members, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/Member' } } } } } } } } }
+  /v1/businesses/{businessId}/members/{memberId}:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: memberId, in: path, required: true, schema: { type: string, format: uuid } }]
+    patch: { summary: 'Change role/status (owners: anyone; managers: agents only; never yourself; keeps one owner)', responses: { '200': { description: Member }, '403': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' } } }
+    delete: { summary: Remove member, responses: { '204': { description: Removed } } }
+  /v1/businesses/{businessId}/invitations:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get: { summary: Pending invitations, responses: { '200': { description: Invitations } } }
+    post:
+      summary: Invite by email (seat-limited); returns a one-time inviteUrl
+      requestBody: { content: { application/json: { schema: { type: object, required: [email, role], properties: { email: { type: string }, role: { type: string, enum: [manager, agent] } } } } } }
+      responses: { '201': { description: Invitation and inviteUrl }, '402': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' } }
+  /v1/businesses/{businessId}/invitations/{invitationId}:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: invitationId, in: path, required: true, schema: { type: string, format: uuid } }]
+    delete: { summary: Revoke invitation, responses: { '204': { description: Revoked } } }
+  /v1/invitations/{token}:
+    parameters: [{ name: token, in: path, required: true, schema: { type: string } }]
+    get: { summary: Preview an invitation, responses: { '200': { description: Preview }, '410': { $ref: '#/components/responses/Error' } } }
+  /v1/invitations/accept:
+    post: { summary: Accept an invitation (email must match), responses: { '200': { description: Joined }, '403': { $ref: '#/components/responses/Error' }, '410': { $ref: '#/components/responses/Error' } } }
+
+  /v1/admin/overview:
+    get: { summary: 'Super Admin: platform metrics (requires platform_admins row + aal2)', responses: { '200': { description: Overview }, '403': { description: mfa_required }, '404': { description: Not an admin } } }
+  /v1/admin/businesses:
+    get: { summary: 'Super Admin: list/search workspaces', parameters: [{ $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }, { $ref: '#/components/parameters/q' }, { name: status, in: query, schema: { type: string, enum: [active, suspended, closed] } }], responses: { '200': { description: Paged businesses } } }
+  /v1/admin/businesses/{businessId}/suspend:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    post: { summary: Suspend workspace with reason, responses: { '200': { description: Suspended } } }
+  /v1/admin/businesses/{businessId}/reactivate:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    post: { summary: Reactivate workspace, responses: { '200': { description: Reactivated } } }
+  /v1/admin/plans:
+    get: { summary: All plans, responses: { '200': { description: Plans } } }
+  /v1/admin/plans/{planId}:
+    patch: { summary: Edit plan prices, trial days and limits, parameters: [{ name: planId, in: path, required: true, schema: { type: string, format: uuid } }], responses: { '200': { description: Plan } } }
+  /v1/admin/settings:
+    get: { summary: System settings, responses: { '200': { description: Settings } } }
+  /v1/admin/settings/{key}:
+    patch: { summary: 'Edit an allow-listed setting (signups_enabled, max_workspaces_per_user, default_plan_code)', parameters: [{ name: key, in: path, required: true, schema: { type: string } }], responses: { '200': { description: Saved } } }
+  /v1/admin/audit-logs:
+    get: { summary: Platform-wide audit log, parameters: [{ $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }, { $ref: '#/components/parameters/q' }], responses: { '200': { description: Paged audit entries } } }
+
+  # ---------------------------------------------------------------- Phase 2: WhatsApp MVP
+  /v1/businesses/{businessId}/channels/whatsapp:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get: { summary: Current WhatsApp connection (token never returned; only last four digits), responses: { '200': { description: Channel or null } } }
+    post:
+      summary: Connect WhatsApp (owner). mode=meta verifies the IDs and token with the Graph API and subscribes the app to the WABA; mode=mock creates a test connection.
+      requestBody: { content: { application/json: { schema: { oneOf: [
+        { type: object, required: [mode], properties: { mode: { const: mock }, displayPhoneNumber: { type: string } } },
+        { type: object, required: [mode, wabaId, phoneNumberId, accessToken], properties: { mode: { const: meta }, wabaId: { type: string }, phoneNumberId: { type: string }, accessToken: { type: string } } } ] } } } }
+      responses: { '201': { description: Connected }, '400': { description: Meta rejected the IDs or token }, '409': { description: Already connected / number in use } }
+    delete: { summary: Disconnect and delete the stored token (blocked while campaigns are running), responses: { '204': { description: Disconnected }, '409': { $ref: '#/components/responses/Error' } } }
+  /v1/businesses/{businessId}/channels/whatsapp/mock/inbound:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    post: { summary: 'Test tool (mock connections only): simulate a customer message through the real webhook processor', responses: { '201': { description: Processed } } }
+
+  /v1/businesses/{businessId}/contacts:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get:
+      summary: List/search contacts
+      parameters: [{ $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }, { $ref: '#/components/parameters/q' },
+        { name: tagId, in: query, schema: { type: string, format: uuid } }, { name: consent, in: query, schema: { type: string, enum: [marketing, none, opted_out] } },
+        { name: archived, in: query, schema: { type: string, enum: ['true', 'false'] } }]
+      responses: { '200': { description: 'Paged contacts; meta also includes contactLimit and contactsUsed' } }
+    post: { summary: 'Create contact (phone normalised to E.164; optional consent with source)', responses: { '201': { description: Contact }, '402': { description: Contact limit reached }, '409': { description: Duplicate phone } } }
+  /v1/businesses/{businessId}/contacts/{contactId}:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: contactId, in: path, required: true, schema: { type: string, format: uuid } }]
+    get: { summary: Contact with consent history and message timeline, responses: { '200': { description: Detail } } }
+    patch: { summary: Update contact fields, responses: { '200': { description: Contact } } }
+  /v1/businesses/{businessId}/contacts/{contactId}/archive:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: contactId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: Archive contact (excluded from campaigns), responses: { '200': { description: Archived } } }
+  /v1/businesses/{businessId}/contacts/{contactId}/restore:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: contactId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: Restore archived contact, responses: { '200': { description: Restored } } }
+  /v1/businesses/{businessId}/contacts/{contactId}/consents:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: contactId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: 'Append a consent record (revoking marketing also suppresses the number)', responses: { '201': { description: Recorded } } }
+  /v1/businesses/{businessId}/contacts/bulk-tag:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    post: { summary: Add or remove a tag on many contacts, responses: { '200': { description: Changed count } } }
+  /v1/businesses/{businessId}/contacts/import:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    post:
+      summary: CSV import (≤10,000 rows, ≤5 MB) with column mapping, duplicate handling and confirmed consent. Never re-subscribes opted-out numbers.
+      requestBody: { content: { application/json: { schema: { type: object, required: [csv, mapping, consent], properties: {
+        csv: { type: string }, mapping: { type: object, additionalProperties: { type: string, description: 'name|phone|email|language|birthday|tags|ignore|custom:<key>' } },
+        onDuplicate: { type: string, enum: [update, skip] }, tagIds: { type: array, items: { type: string, format: uuid } },
+        consent: { type: object, properties: { marketing: { type: boolean }, utility: { type: boolean }, source: { type: string }, confirmed: { type: boolean } } } } } } } }
+      responses: { '200': { description: '{ totalRows, created, updated, skipped, errors[] }' } }
+  /v1/businesses/{businessId}/contacts-export.csv:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get: { summary: CSV export (audit-logged; spreadsheet formula injection neutralised), responses: { '200': { description: CSV, content: { text/csv: {} } } } }
+  /v1/businesses/{businessId}/tags:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get: { summary: Tags with contact counts, responses: { '200': { description: Tags } } }
+    post: { summary: Create tag, responses: { '201': { description: Tag } } }
+  /v1/businesses/{businessId}/tags/{tagId}:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: tagId, in: path, required: true, schema: { type: string, format: uuid } }]
+    delete: { summary: Delete tag, responses: { '204': { description: Deleted } } }
+
+  /v1/businesses/{businessId}/templates:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get: { summary: Templates with approval status, responses: { '200': { description: Templates } } }
+    post: { summary: 'Create draft. Body uses named placeholders ({{customer_name}}) converted to Meta positional format; examples required for every variable', responses: { '201': { description: Template }, '422': { $ref: '#/components/responses/Error' } } }
+  /v1/businesses/{businessId}/templates/{templateId}/submit:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: templateId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: Submit to Meta for review (mock connections auto-review), responses: { '200': { description: Template } } }
+  /v1/businesses/{businessId}/templates/sync:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    post: { summary: Pull statuses and templates created in WhatsApp Manager, responses: { '200': { description: '{ updated, imported }' } } }
+  /v1/businesses/{businessId}/templates/{templateId}:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: templateId, in: path, required: true, schema: { type: string, format: uuid } }]
+    delete: { summary: Delete a draft or rejected template, responses: { '204': { description: Deleted } } }
+
+  /v1/businesses/{businessId}/campaigns:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get: { summary: 'Campaigns (status=comma list)', parameters: [{ name: status, in: query, schema: { type: string } }, { $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }], responses: { '200': { description: Paged campaigns with stats } } }
+    post: { summary: 'Create draft: templateId, audience {type: all|tags, tagIds}, variableDefaults', responses: { '201': { description: Campaign } } }
+  /v1/businesses/{businessId}/campaigns/{campaignId}:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }]
+    get: { summary: Campaign with live stats, responses: { '200': { description: Campaign } } }
+    patch: { summary: Edit a draft, responses: { '200': { description: Campaign }, '409': { description: Not a draft } } }
+    delete: { summary: Delete a draft, responses: { '204': { description: Deleted } } }
+  /v1/businesses/{businessId}/campaigns/{campaignId}/preview:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: 'Validation: eligible count, skip reasons (consent, opt-out, suppression, missing variable, messaging limit), blockers, warnings, sample render', responses: { '200': { description: Preview } } }
+  /v1/businesses/{businessId}/campaigns/{campaignId}/schedule:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: 'Schedule (scheduledAt) or send now. Re-runs all validation; draft → scheduled', responses: { '200': { description: Campaign }, '409': { description: Not a draft }, '422': { description: Blocked (details.blockers) } } }
+  /v1/businesses/{businessId}/campaigns/{campaignId}/unschedule:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: scheduled → draft, responses: { '200': { description: Campaign } } }
+  /v1/businesses/{businessId}/campaigns/{campaignId}/pause:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: processing → paused, responses: { '200': { description: Campaign } } }
+  /v1/businesses/{businessId}/campaigns/{campaignId}/resume:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: paused → processing, responses: { '200': { description: Campaign } } }
+  /v1/businesses/{businessId}/campaigns/{campaignId}/cancel:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: Cancel a scheduled, processing or paused campaign, responses: { '200': { description: Campaign } } }
+  /v1/businesses/{businessId}/campaigns/{campaignId}/recipients:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }]
+    get: { summary: Recipients with delivery status and errors, parameters: [{ name: status, in: query, schema: { type: string } }], responses: { '200': { description: Paged recipients } } }
+  /v1/businesses/{businessId}/campaigns/{campaignId}/report.csv:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }]
+    get: { summary: Delivery report CSV, responses: { '200': { description: CSV } } }
+
+  /v1/webhooks/razorpay:
+    post:
+      summary: Razorpay subscription and payment events (X-Razorpay-Signature, HMAC-SHA256 of the raw body; idempotent by X-Razorpay-Event-Id)
+      security: []
+      responses: { '200': { description: Received }, '401': { description: Invalid signature }, '503': { description: Webhook secret not configured } }
+  /v1/webhooks/meta:
+    get:
+      summary: Meta webhook verification
+      security: []
+      parameters: [{ name: hub.mode, in: query, schema: { type: string } }, { name: hub.verify_token, in: query, schema: { type: string } }, { name: hub.challenge, in: query, schema: { type: string } }]
+      responses: { '200': { description: Echoes hub.challenge }, '403': { description: Wrong token } }
+    post:
+      summary: 'Meta events (messages, statuses, template status). Requires X-Hub-Signature-256; stored idempotently and processed asynchronously'
+      security: []
+      parameters: [{ name: X-Hub-Signature-256, in: header, required: true, schema: { type: string } }]
+      responses: { '200': { description: Accepted }, '401': { description: Invalid signature }, '503': { description: META_APP_SECRET not configured } }
+
+  /v1/admin/queue:
+    get: { summary: 'Super Admin: job counts, dead-letter jobs, webhook health', responses: { '200': { description: Queue } } }
+  /v1/admin/queue/{jobId}/retry:
+    post: { summary: 'Super Admin: re-queue a dead-letter job', parameters: [{ name: jobId, in: path, required: true, schema: { type: string, format: uuid } }], responses: { '200': { description: Re-queued } } }
+
+  # ---------------------------------------------------------------- Phase 3: inbox & CRM
+  /v1/businesses/{businessId}/conversations:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get:
+      summary: 'Conversations (agents: only assigned to them or unassigned — enforced by RLS)'
+      parameters: [{ name: view, in: query, schema: { type: string, enum: [all, mine, unassigned] } }, { name: status, in: query, schema: { type: string, enum: [active, open, pending, closed] } }, { $ref: '#/components/parameters/q' }, { $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }]
+      responses: { '200': { description: 'Paged conversations incl. windowOpen / windowExpiresAt (24h customer service window)' } }
+  /v1/businesses/{businessId}/inbox/counts:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get: { summary: Counts for all / mine / unassigned / unread, responses: { '200': { description: Counts } } }
+  /v1/businesses/{businessId}/conversations/{conversationId}:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: conversationId, in: path, required: true, schema: { type: string, format: uuid } }]
+    get: { summary: Thread with messages, internal notes and contact, responses: { '200': { description: Detail }, '404': { description: Not visible to caller } } }
+  /v1/businesses/{businessId}/conversations/{conversationId}/messages:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: conversationId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post:
+      summary: 'Reply. type=text only inside the 24h window; type=template any time (marketing needs consent). clientId makes retries idempotent. Replying to an unassigned conversation claims it. Sent by the worker.'
+      requestBody: { content: { application/json: { schema: { oneOf: [
+        { type: object, required: [type, body, clientId], properties: { type: { const: text }, body: { type: string }, clientId: { type: string, format: uuid } } },
+        { type: object, required: [type, templateId, clientId], properties: { type: { const: template }, templateId: { type: string, format: uuid }, variables: { type: object }, clientId: { type: string, format: uuid } } } ] } } } }
+      responses: { '201': { description: Queued }, '200': { description: Duplicate clientId — existing message returned }, '409': { description: Conversation closed }, '422': { description: 'outside_24h_window | template_not_approved | no_consent | missing_variables' } }
+  /v1/businesses/{businessId}/conversations/{conversationId}/assign:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: conversationId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: 'Assign (owners/managers: anyone; agents: claim unassigned or release their own)', responses: { '200': { description: Conversation }, '403': { $ref: '#/components/responses/Error' } } }
+  /v1/businesses/{businessId}/conversations/{conversationId}/status:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: conversationId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: open / pending / closed, responses: { '200': { description: Conversation }, '409': { description: A newer open conversation exists } } }
+  /v1/businesses/{businessId}/conversations/{conversationId}/read:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: conversationId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: Reset unread count, responses: { '204': { description: Done } } }
+  /v1/businesses/{businessId}/conversations/{conversationId}/tags:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: conversationId, in: path, required: true, schema: { type: string, format: uuid } }]
+    put: { summary: Replace conversation labels, responses: { '200': { description: Conversation } } }
+  /v1/businesses/{businessId}/conversations/{conversationId}/notes:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: conversationId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: Internal note (never sent to the customer), responses: { '201': { description: Note } } }
+  /v1/businesses/{businessId}/canned-replies:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get: { summary: Quick replies, responses: { '200': { description: List } } }
+    post: { summary: Create quick reply (owner/manager), responses: { '201': { description: Created }, '409': { description: Shortcut exists } } }
+  /v1/businesses/{businessId}/pipelines:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get: { summary: Pipelines with ordered stages, responses: { '200': { description: Pipelines } } }
+  /v1/businesses/{businessId}/leads:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get: { summary: 'Leads (filters: pipelineId, contactId, status, assignedTo=me|uuid, q)', responses: { '200': { description: Leads } } }
+    post: { summary: Create lead (defaults to first stage, assigned to caller), responses: { '201': { description: Lead } } }
+  /v1/businesses/{businessId}/leads/{leadId}:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: leadId, in: path, required: true, schema: { type: string, format: uuid } }]
+    patch: { summary: 'Update / move stage (Won/Lost stages set status; stage history recorded)', responses: { '200': { description: Lead } } }
+  /v1/businesses/{businessId}/tasks:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get: { summary: 'Follow-up tasks (view=mine|all|overdue|unassigned, status, contactId, leadId)', responses: { '200': { description: Tasks } } }
+    post: { summary: Create task (optionally linked to contact, lead or conversation), responses: { '201': { description: Task } } }
+  /v1/businesses/{businessId}/tasks/{taskId}:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: taskId, in: path, required: true, schema: { type: string, format: uuid } }]
+    patch: { summary: Update or complete a task, responses: { '200': { description: Task } } }
+  /v1/businesses/{businessId}/contacts/{contactId}/notes:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: contactId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: Add a contact note, responses: { '201': { description: Note } } }
+  /v1/businesses/{businessId}/contacts/{contactId}/timeline:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: contactId, in: path, required: true, schema: { type: string, format: uuid } }]
+    get: { summary: Notes, leads, tasks and stage changes for one customer, responses: { '200': { description: Timeline } } }
+  /v1/businesses/{businessId}/reports:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get: { summary: 'Conversation, lead, campaign and team performance report (days=1..365)', responses: { '200': { description: Report } } }
+  /v1/businesses/{businessId}/reports/team.csv:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get: { summary: Team performance and lead sources as CSV, responses: { '200': { description: CSV } } }
+
+  # ---------------------------------------------------------------- Phase 4: automation
+  /v1/businesses/{businessId}/automation-templates:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get: { summary: Ready-made gym workflows (enquiry ack, renewal, payment due, birthday, holiday, PT follow-up, survey), responses: { '200': { description: Templates } } }
+  /v1/businesses/{businessId}/automations:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get: { summary: Workflows with draft/live versions and run stats (owner/manager), responses: { '200': { description: Workflows } } }
+    post: { summary: 'Create a draft (optionally from templateKey). Limited by the workflows entitlement', responses: { '201': { description: Workflow }, '402': { description: Plan limit } } }
+  /v1/businesses/{businessId}/automations/{workflowId}:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: workflowId, in: path, required: true, schema: { type: string, format: uuid } }]
+    get: { summary: Workflow, responses: { '200': { description: Workflow } } }
+  /v1/businesses/{businessId}/automations/{workflowId}/draft:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: workflowId, in: path, required: true, schema: { type: string, format: uuid } }]
+    put: { summary: 'Save draft definition {trigger, steps[], reentry}. Incomplete drafts allowed', responses: { '200': { description: Workflow } } }
+  /v1/businesses/{businessId}/automations/{workflowId}/validate:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: workflowId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: Validate the draft (templates approved, tags/members/stages exist, nesting, self-retrigger), responses: { '200': { description: '{ valid, errors[] }' } } }
+  /v1/businesses/{businessId}/automations/{workflowId}/publish:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: workflowId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: Validate and publish the draft as a new immutable version; runs are pinned to their version, responses: { '200': { description: Workflow }, '422': { description: 'details.errors[] with stepId' } } }
+  /v1/businesses/{businessId}/automations/{workflowId}/pause:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: workflowId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: Stop new runs and cancel waiting runs, responses: { '200': { description: Workflow } } }
+  /v1/businesses/{businessId}/automations/{workflowId}/resume:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: workflowId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: Resume the live version, responses: { '200': { description: Workflow } } }
+  /v1/businesses/{businessId}/automations/{workflowId}/archive:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: workflowId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: Archive (history kept), responses: { '200': { description: Archived } } }
+  /v1/businesses/{businessId}/automations/{workflowId}/test:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: workflowId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: 'Run the live version now for one contact (real actions)', responses: { '201': { description: '{ executionId }' }, '409': { description: Not published } } }
+  /v1/businesses/{businessId}/automation-executions:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get: { summary: 'Runs (filters: workflowId, status=running|waiting|completed|failed|cancelled)', responses: { '200': { description: Paged runs } } }
+  /v1/businesses/{businessId}/automation-executions/{executionId}:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: executionId, in: path, required: true, schema: { type: string, format: uuid } }]
+    get: { summary: Run with step-by-step log, responses: { '200': { description: Run } } }
+  /v1/businesses/{businessId}/automation-executions/{executionId}/retry:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: executionId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: Retry a failed run from the failed step, responses: { '200': { description: Running } } }
+  /v1/businesses/{businessId}/automation-executions/{executionId}/cancel:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: executionId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: Cancel a running or waiting run, responses: { '200': { description: Cancelled } } }
+  /v1/businesses/{businessId}/notifications:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get: { summary: "Caller's in-app notifications (from Notify staff steps)", responses: { '200': { description: 'Notifications; meta.unread' } } }
+  /v1/businesses/{businessId}/notifications/read-all:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    post: { summary: Mark all read, responses: { '204': { description: Done } } }
+
+  # ---------------------------------------------------------------- Phase 5: AI Center
+  /v1/businesses/{businessId}/ai/settings:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get: { summary: AI assistant settings and plan allowance (owner/manager), responses: { '200': { description: Settings } } }
+    put: { summary: 'Update settings (enable, auto-reply, languages, tone, threshold, limits, handoff keywords/notify)', responses: { '200': { description: Settings }, '402': { description: Not in plan } } }
+  /v1/businesses/{businessId}/billing:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get: { summary: 'Subscription, pending checkout, invoices and payments (billing.read). mode is mock or live.', responses: { '200': { description: Billing } } }
+  /v1/businesses/{businessId}/billing/checkout:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    post:
+      summary: Start a Razorpay subscription checkout for a plan (owner only). The current plan stays active until the first charge is confirmed by webhook.
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [planCode, billingCycle], properties: { planCode: { type: string }, billingCycle: { type: string, enum: [monthly, annual] } } } } } }
+      responses: { '201': { description: 'Checkout created (keyId is the public key id; null in mock mode)' }, '409': { description: 'already_subscribed or plan_not_configured' } }
+  /v1/businesses/{businessId}/billing/cancel:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    post: { summary: Cancel at the end of the billing period (owner only), responses: { '200': { description: Scheduled }, '409': { description: nothing_to_cancel } } }
+  /v1/businesses/{businessId}/billing/mock/complete:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    post: { summary: 'Mock mode only: simulate the charge webhook for the pending checkout (owner only). Returns 404 when BILLING_PROVIDER is razorpay.', responses: { '202': { description: Queued }, '404': { $ref: '#/components/responses/Error' } } }
+
+  /v1/businesses/{businessId}/ai/knowledge:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get: { summary: Knowledge base entries, responses: { '200': { description: Entries } } }
+    post: { summary: 'Add FAQ {sourceType: faq, question, answer} or business info {sourceType: text, title, content}', responses: { '201': { description: Entry } } }
+  /v1/businesses/{businessId}/ai/knowledge/{sourceId}:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: sourceId, in: path, required: true, schema: { type: string, format: uuid } }]
+    patch: { summary: Edit or enable/disable an entry, responses: { '200': { description: Entry } } }
+    delete: { summary: Delete an entry, responses: { '204': { description: Deleted } } }
+  /v1/businesses/{businessId}/ai/test:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    post: { summary: 'Playground: answer a question without sending anything (outcome, confidence, guards, sources)', responses: { '200': { description: Answer } } }
+  /v1/businesses/{businessId}/conversations/{conversationId}/ai-suggest:
+    parameters: [{ $ref: '#/components/parameters/businessId' }, { name: conversationId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: Suggest a reply to the latest customer message (not sent), responses: { '200': { description: Answer }, '404': { description: Not visible to caller } } }
+  /v1/businesses/{businessId}/ai/content:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    post: { summary: 'Draft template/campaign text {kind, prompt, language, category}', responses: { '200': { description: '{ text, model }' } } }
+  /v1/businesses/{businessId}/ai/usage:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get: { summary: Month tokens/cost vs limits, outcomes, features, daily series, responses: { '200': { description: Usage } } }
+  /v1/businesses/{businessId}/ai/audit:
+    parameters: [{ $ref: '#/components/parameters/businessId' }]
+    get: { summary: AI audit trail (redacted question/answer, guards, outcome), responses: { '200': { description: Paged audit } } }
